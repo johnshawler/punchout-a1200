@@ -1,0 +1,23 @@
+diff --git a/src/x6502.c b/src/x6502.c
+index 6250f2a..ecb2a13 100644
+--- a/src/x6502.c
++++ b/src/x6502.c
+@@ -25,6 +25,10 @@
+ #include "x6502.h"
+ #include "fceu.h"
+ #include "sound.h"
++#include "cart.h"
++static uint16_t trace_cnt[16][65536]; static uint32_t trace_cyc[16][65536];
++uint16_t *retro_trace_ptr(void){return &trace_cnt[0][0];}
++void retro_trace_clear(void){memset(trace_cnt,0,sizeof trace_cnt);}
+ 
+ X6502 X;
+ uint8_t encryptOpcodes = 0;
+@@ -447,6 +451,7 @@ void X6502_Run(int32_t cycles)
+ 
+ 		_PI = _P;
+ 		b1 = RdMem(_PC);
++		{ unsigned pcv=_PC; unsigned bk=0; if(pcv>=0x8000&&pcv<0xA000){ bk=(unsigned)(((Page[16]+0x8000)-PRGptr[0])>>13)&15; } if(trace_cnt[bk][pcv]<65535) trace_cnt[bk][pcv]++; }
+ 
+ 		ADDCYC(CycTable[b1]);
+ 

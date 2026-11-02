@@ -1,0 +1,111 @@
+diff --git a/src/boards/mmc2and4.c b/src/boards/mmc2and4.c
+index e1b4757..07e0335 100644
+--- a/src/boards/mmc2and4.c
++++ b/src/boards/mmc2and4.c
+@@ -37,7 +37,9 @@ static SFORMAT StateRegs[] =
+ 	{ 0 }
+ };
+ 
++uint8_t dbg_mmc2[8];
+ static void Sync(void) {
++	dbg_mmc2[0]=creg[0];dbg_mmc2[1]=creg[1];dbg_mmc2[2]=creg[2];dbg_mmc2[3]=creg[3];dbg_mmc2[4]=latch0;dbg_mmc2[5]=latch1;dbg_mmc2[6]=mirr;
+ 	if (is10) {
+ 		setprg16(0x8000, preg);
+ 		setprg16(0xC000, ~0);
+@@ -65,8 +67,11 @@ static DECLFW(MMC2and4Write) {
+ 	}
+ }
+ 
++extern int scanline, dbg_src;
++uint32_t dbg_log[8192]; int dbg_log_n;
+ static void FP_FASTAPASS(1) MMC2and4PPUHook(uint32_t A) {
+ 	uint8_t l, h = A >> 8;
++	uint8_t o0 = latch0, o1 = latch1;
+ 	if (h >= 0x20 || ((h & 0xF) != 0xF))
+ 		return;
+ 	l = A & 0xF0;
+@@ -87,6 +92,7 @@ static void FP_FASTAPASS(1) MMC2and4PPUHook(uint32_t A) {
+ 			setchr4(0x1000, creg[3]);
+ 		}
+ 	}
++	if ((o0 != latch0 || o1 != latch1) && dbg_log_n < 8190 && scanline >= 0) { dbg_log[dbg_log_n++] = (scanline << 16) | (A & 0xFFFF); dbg_log[dbg_log_n++] = latch0 | latch1 << 1 | dbg_src << 2; }
+ }
+ 
+ static void MMC2and4Power(void) {
+diff --git a/src/ppu.c b/src/ppu.c
+index fb78963..62d70ba 100644
+--- a/src/ppu.c
++++ b/src/ppu.c
+@@ -384,6 +384,7 @@ static DECLFW(B4014) {
+ #define GETLASTPIXEL    (PAL ? ((timestamp * 48 - linestartts) / 15) : ((timestamp * 48 - linestartts) >> 4))
+ 
+ static uint8_t *Pline, *Plinef;
++uint16_t dbg_vline[256]; uint8_t dbg_xline[256];
+ static int firsttile;
+ static int linestartts;
+ static int tofix = 0;
+@@ -461,6 +462,7 @@ static void FASTAPASS(1) RefreshLine(int lastpixel) {
+ 	static uint32_t pshift[2];
+ 	static uint32_t atlatch;
+ 	uint32_t smorkus = RefreshAddr;
++	if (firsttile == 0 && scanline >= 0 && scanline < 240) { dbg_vline[scanline] = RefreshAddr; dbg_xline[scanline] = XOffset; }
+ 
+ 	#define RefreshAddr smorkus
+ 	uint32_t vofs;
+@@ -802,7 +804,9 @@ void FCEUI_DisableSpriteLimitation(int a) {
+ }
+ 
+ static uint8_t numsprites, SpriteBlurp;
++int dbg_src;
+ static void FetchSpriteData(void) {
++	dbg_src = 1;
+ 	uint8_t ns, sb;
+ 	SPR *spr;
+ 	uint8_t H;
+@@ -964,6 +968,7 @@ static void FetchSpriteData(void) {
+ 		}
+ 	}
+ 	numsprites = ns;
++	dbg_src = 0;
+ 	SpriteBlurp = sb;
+ }
+ 
+diff --git a/src/x6502.c b/src/x6502.c
+index 6250f2a..5a0cee0 100644
+--- a/src/x6502.c
++++ b/src/x6502.c
+@@ -25,6 +25,10 @@
+ #include "x6502.h"
+ #include "fceu.h"
+ #include "sound.h"
++#include "cart.h"
++static uint16_t trace_cnt[16][65536]; static uint32_t trace_cyc[16][65536];
++uint16_t *retro_trace_ptr(void){return &trace_cnt[0][0];}
++void retro_trace_clear(void){memset(trace_cnt,0,sizeof trace_cnt);}
+ 
+ X6502 X;
+ uint8_t encryptOpcodes = 0;
+@@ -447,6 +451,7 @@ void X6502_Run(int32_t cycles)
+ 
+ 		_PI = _P;
+ 		b1 = RdMem(_PC);
++		{ unsigned pcv=_PC; unsigned bk=0; if(pcv>=0x8000&&pcv<0xA000){ bk=(unsigned)(((Page[16]+0x8000)-PRGptr[0])>>13)&15; } if(trace_cnt[bk][pcv]<65535) trace_cnt[bk][pcv]++; }
+ 
+ 		ADDCYC(CycTable[b1]);
+ 
+@@ -475,3 +480,15 @@ void X6502_Run(int32_t cycles)
+ 	#undef RdRAM
+ 	#undef WrRAM
+ }
++
++extern uint8_t NTARAM[0x800], PALRAM[0x20], SPRAM[0x100], XOffset, PPU[4], dbg_mmc2[8];
++extern uint32_t TempAddr, RefreshAddr;
++void retro_dbg_ppu(uint8_t *o){
++ int i; for(i=0;i<0x800;i++)o[i]=NTARAM[i]; for(i=0;i<0x20;i++)o[0x800+i]=PALRAM[i]; for(i=0;i<0x100;i++)o[0x820+i]=SPRAM[i];
++ o[0x920]=PPU[0];o[0x921]=PPU[1];o[0x922]=XOffset;o[0x923]=0;
++ o[0x924]=TempAddr;o[0x925]=TempAddr>>8;o[0x926]=RefreshAddr;o[0x927]=RefreshAddr>>8;
++ for(i=0;i<8;i++)o[0x928+i]=dbg_mmc2[i];
++ {extern uint16_t dbg_vline[256]; extern uint8_t dbg_xline[256]; for(i=0;i<240;i++){o[0x930+i*3]=dbg_vline[i];o[0x931+i*3]=dbg_vline[i]>>8;o[0x932+i*3]=dbg_xline[i];}}}
++
++extern uint32_t dbg_log[8192]; extern int dbg_log_n;
++int retro_dbg_log(uint32_t *o){ int n=dbg_log_n,i; for(i=0;i<n;i++)o[i]=dbg_log[i]; dbg_log_n=0; return n; }

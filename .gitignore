@@ -1,0 +1,15 @@
+*.adf
+*.rom
+*.nes
+*.zip
+prg.bin
+chr.bin
+trace.bin
+build/
+__pycache__/
+*.pyc
+*.wav
+*.png
+nes-a1200/test/sprdump.inc
+nes-a1200/test/script2.inc
+platform-a1200/test/.run_*.fs-uae

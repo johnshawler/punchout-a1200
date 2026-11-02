@@ -1,0 +1,10 @@
+    0x00202fdc,   /* spr_banks */
+    0x00203488,   /* emit_inst */
+    0x002039fe,   /* build_copper */
+    0x00203f4c,   /* process_draw */
+    0x00204264,   /* update_palette */
+    0x002043e6,   /* sprite_blank */
+    0x002045f0,   /* sprite_rows */
+    0x002048d2,   /* build_sprites */
+    0x00205ba2,   /* resolve_mode */
+    0x00206920,   /* vid_spr0_hit */
